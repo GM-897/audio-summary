@@ -25,14 +25,38 @@ export default function Home() {
                 return alert('Upload to S3 failed');
             }
 
-            // 3) Notify backend that upload completed so it can create DB record
-            const notifyRes = await api.post('audio/notify/', { key, filename });
-            alert('Uploaded: ' + notifyRes.data.filename);
+                        // 3) Notify backend that upload completed so it can create DB record
+                        const notifyRes = await api.post('audio/notify/', { key, filename });
+                        const audio = notifyRes.data; // contains id, status, transcription_text, file_url
+                        setLastAudio(audio);
+                        // poll for transcription status
+                        pollTranscription(audio.id);
         } catch (err) {
             console.error(err);
             alert('Upload Failed');
         }
     };
+
+        const [lastAudio, setLastAudio] = useState(null);
+
+        const pollTranscription = async (id) => {
+            const interval = 10000; // ms
+            const maxRetries = 60; // 3 minutes
+            let attempts = 0;
+            const timer = setInterval(async () => {
+                attempts += 1;
+                try {
+                    const res = await api.get(`audio/${id}/status/`);
+                    setLastAudio(res.data);
+                    if (res.data.status === 'completed' || res.data.status === 'failed' || attempts >= maxRetries) {
+                        clearInterval(timer);
+                    }
+                } catch (err) {
+                    console.error('Polling error', err);
+                    clearInterval(timer);
+                }
+            }, interval);
+        };
 
     return (
         <div>
@@ -49,6 +73,22 @@ export default function Home() {
                 <input type="file" accept="audio/*" onChange={handleFileChange} />
                 <button type="submit">Upload</button>
             </form>
+                        {lastAudio && (
+                            <div style={{marginTop:20}}>
+                                <h3>Transcription Status: {lastAudio.status}</h3>
+                                {lastAudio.status === 'processing' && <p>Processing... please wait.</p>}
+                                {lastAudio.status === 'completed' && (
+                                    <div>
+                                        <h4>Transcription</h4>
+                                        <pre style={{whiteSpace:'pre-wrap'}}>{lastAudio.transcription_text}</pre>
+                                        {lastAudio.file_url && (
+                                            <p>File: <a href={lastAudio.file_url} target="_blank" rel="noreferrer">{lastAudio.file_url}</a></p>
+                                        )}
+                                    </div>
+                                )}
+                                {lastAudio.status === 'failed' && <p>Transcription failed.</p>}
+                            </div>
+                        )}
         </div>
     );
 }

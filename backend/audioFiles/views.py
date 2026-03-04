@@ -10,6 +10,7 @@ from rest_framework import status
 
 from .serializers import AudioFileSerializer
 from .models import AudioFile
+from .tasks import process_audio_transcription
 
 
 class AudioUploadView(APIView):
@@ -106,8 +107,25 @@ class NotifyUploadView(APIView):
             user=request.user,
             filename=provided_name or os.path.basename(key),
             file_url=file_url,
+            s3_key=key,
         )
-        # store key in FileField name so admin and other code see it
-        # audio.filename.name = key
         audio.save()
+
+        # Enqueue transcription task; don't let Celery/Redis errors cause a 500
+        try:
+            process_audio_transcription.delay(audio.id)
+        except Exception:
+            import logging
+            logging.exception('Failed to enqueue transcription task')
+
         return Response(AudioFileSerializer(audio).data, status=status.HTTP_201_CREATED)
+
+class TranscriptionStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self,request,pk):
+        try:
+            audio = AudioFile.objects.get(pk=pk)
+            return Response(AudioFileSerializer(audio).data, status=status.HTTP_200_OK)
+        except AudioFile.DoesNotExist:
+            return Response({'detail': 'Audio file not found'}, status=status.HTTP_404_NOT_FOUND)
