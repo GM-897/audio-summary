@@ -1,15 +1,15 @@
+import uuid
 import boto3
-from django.shortcuts import render
-from rest_framework.views import APIView, settings, settings
+from django.conf import settings
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 
 from .serializers import AudioFileSerializer
-import uuid
-import boto3
-from django.conf import settings
+from .models import AudioFile
+
 
 class AudioUploadView(APIView):
     permission_classes = [IsAuthenticated]
@@ -27,14 +27,17 @@ class PresignUploadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # filename = request.data.get('filename')
-        content_type = request.data.get('content_type')
+        """Return a presigned POST for direct S3 upload.
 
-        # if not filename:
-        #     return Response({'detail': 'filename required'}, status=400)
+        Expects: { content_type: 'audio/mp4' }
+        Returns: { url, fields, key }
+        """
+        content_type = request.data.get('content_type')
+        if not content_type:
+            return Response({'detail': 'content_type required'}, status=status.HTTP_400_BAD_REQUEST)
 
         unique_name = f"{uuid.uuid4()}"
-        key = f'audio/{request.user.id}/{unique_name}'
+        key = f'uploads/{request.user.id}/{unique_name}'
 
         client = boto3.client(
             's3',
@@ -47,20 +50,38 @@ class PresignUploadView(APIView):
             Bucket=settings.AWS_STORAGE_BUCKET_NAME,
             Key=key,
             Fields={
-                "acl": "private",
-                "Content-Type": content_type
+                'acl': 'private',
+                'Content-Type': content_type,
             },
             Conditions=[
-                {"acl": "private"},
-                ["content-length-range", 1, 50 * 1024 * 1024],
-                {"Content-Type": content_type}
+                {'acl': 'private'},
+                ['content-length-range', 1, 50 * 1024 * 1024],
+                {'Content-Type': content_type},
             ],
-            ExpiresIn=3600
+            ExpiresIn=3600,
         )
-        print(presigned)
 
         return Response({
             'url': presigned['url'],
             'fields': presigned['fields'],
-            'key': key
+            'key': key,
         })
+
+
+class NotifyUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        """Notify backend that S3 upload completed and store metadata in DB.
+
+        Expects: { key: 'audio/USERID/uuid' }
+        """
+        key = request.data.get('key')
+        if not key:
+            return Response({'detail': 'key required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create DB record and set FileField name to the S3 key.
+        audio = AudioFile.objects.create(user=request.user)
+        audio.filename.name = key
+        audio.save()
+        return Response(AudioFileSerializer(audio).data, status=status.HTTP_201_CREATED)

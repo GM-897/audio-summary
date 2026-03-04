@@ -3,9 +3,9 @@ from .models import AudioFile
 
 class AudioFileSerializer(serializers.ModelSerializer):
     class Meta:
-        model=AudioFile
-        fields=['id','file','user','created_at']
-        read_only_fields=['user','created_at']
+        model = AudioFile
+        fields = ['id', 'filename', 'user', 'created_at'] 
+        read_only_fields = ['user', 'created_at']
 
     def create(self, validated_data):
         request = self.context.get('request')
