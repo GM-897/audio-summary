@@ -3,15 +3,15 @@ import api from '../services/api';
 
 export default function Home() {
     const [file, setFile] = useState(null);
+    const [filename, setFilename] = useState('');
     const handleFileChange = (e) => setFile(e.target.files[0]);
 
     const handleUpload = async (e) => {
         e.preventDefault();
         if (!file) return alert('Please select a file');
-
         try {
             // 1) Request presigned POST from backend
-            const presignRes = await api.post('audio/upload/', { content_type: file.type });
+            const presignRes = await api.post('audio/upload/', { content_type: file.type, filename });
             const { url, fields, key } = presignRes.data;
 
             // 2) Build form data for S3 and upload directly
@@ -26,7 +26,7 @@ export default function Home() {
             }
 
             // 3) Notify backend that upload completed so it can create DB record
-            const notifyRes = await api.post('audio/notify/', { key });
+            const notifyRes = await api.post('audio/notify/', { key, filename });
             alert('Uploaded: ' + notifyRes.data.filename);
         } catch (err) {
             console.error(err);
@@ -42,6 +42,10 @@ export default function Home() {
             <h2>Audio File Upload</h2>
             <p>Upload your audio files to get concise summaries of their content.</p>
             <form onSubmit={handleUpload}>
+                   <label>
+                       Desired filename:
+                       <input value={filename} onChange={(e) => setFilename(e.target.value)} placeholder="my_audio_title.mp4" />
+                   </label>
                 <input type="file" accept="audio/*" onChange={handleFileChange} />
                 <button type="submit">Upload</button>
             </form>

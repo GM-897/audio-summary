@@ -1,3 +1,4 @@
+import os
 import uuid
 import boto3
 from django.conf import settings
@@ -36,8 +37,14 @@ class PresignUploadView(APIView):
         if not content_type:
             return Response({'detail': 'content_type required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Allow caller to provide a desired filename; use its extension if present
+        provided_name = request.data.get('filename')
+        ext = ''
+        if provided_name:
+            ext = os.path.splitext(os.path.basename(provided_name))[1]
+
         unique_name = f"{uuid.uuid4()}"
-        key = f'uploads/{request.user.id}/{unique_name}'
+        key = f'uploads/{request.user.id}/{unique_name}{ext}'
 
         client = boto3.client(
             's3',
@@ -79,9 +86,28 @@ class NotifyUploadView(APIView):
         key = request.data.get('key')
         if not key:
             return Response({'detail': 'key required'}, status=status.HTTP_400_BAD_REQUEST)
+        provided_name = request.data.get('filename')
 
-        # Create DB record and set FileField name to the S3 key.
-        audio = AudioFile.objects.create(user=request.user)
-        audio.filename.name = key
+        # Compute a public URL for the uploaded object. This assumes the
+        # bucket is publicly addressable or that you want the standard S3 URL.
+        bucket = getattr(settings, 'AWS_STORAGE_BUCKET_NAME', None)
+        region = getattr(settings, 'AWS_S3_REGION_NAME', None)
+        if getattr(settings, 'AWS_S3_CUSTOM_DOMAIN', None):
+            file_url = f"https://{settings.AWS_S3_CUSTOM_DOMAIN}/{key}"
+        elif bucket and region and region != 'us-east-1':
+            file_url = f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+        elif bucket:
+            file_url = f"https://{bucket}.s3.amazonaws.com/{key}"
+        else:
+            # Fallback: construct from presigned url format
+            file_url = None
+
+        audio = AudioFile.objects.create(
+            user=request.user,
+            filename=provided_name or os.path.basename(key),
+            file_url=file_url,
+        )
+        # store key in FileField name so admin and other code see it
+        # audio.filename.name = key
         audio.save()
         return Response(AudioFileSerializer(audio).data, status=status.HTTP_201_CREATED)
