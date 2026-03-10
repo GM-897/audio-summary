@@ -9,7 +9,7 @@ function App() {
   return (
     <div className="App">
       <nav>
-        <Link to="/">Home</Link> | <Link to="/login">Login</Link>
+        <Link to="/" className="nav-link">Home</Link> | <Link to="/login" className="nav-link">Login</Link>
       </nav>
       <main>
         <Routes>
