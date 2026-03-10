@@ -1,4 +1,4 @@
-import React, {createContext, useState, useEffect, Children} from "react";
+import React, { createContext, useState, useEffect } from "react";
 import  {getTokens, logout} from '../services/auth';
 
 // Create context -->creates a global auth container;
